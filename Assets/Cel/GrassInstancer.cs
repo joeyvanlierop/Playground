@@ -1,99 +1,96 @@
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using UnityEngine;
 
 namespace Cel
 {
     public class GrassInstancer : MonoBehaviour
     {
-        [SerializeField] private int instanceCount = 100000;
-        [SerializeField] private Mesh instanceMesh;
-        [SerializeField] private Material instanceMaterial;
-        [SerializeField] private int subMeshIndex = 0;
+        public Mesh mesh;
+        public Material material;
 
-        private int cachedInstanceCount = -1;
-        private int cachedSubMeshIndex = -1;
-        private ComputeBuffer positionBuffer;
+        private uint[] args = new uint[5];
         private ComputeBuffer argsBuffer;
-        private uint[] args = new uint[5] { 0, 0, 0, 0, 0 };
+        private ComputeBuffer drawDataBuffer;
+        private List<DrawData> instances;
+        private MaterialPropertyBlock mpb;
+        private Terrain terrain;
 
-        void Start()
+        private void Awake()
         {
-            argsBuffer = new ComputeBuffer(1, args.Length * sizeof(uint), ComputeBufferType.IndirectArguments);
-            UpdateBuffers();
+            terrain = GetComponent<Terrain>();
+
+            instances = new List<DrawData>();
+
+            argsBuffer = new ComputeBuffer(5, sizeof(uint), ComputeBufferType.IndirectArguments);
+            // Meshes with sub-meshes needs more structure, this assumes a single sub-mesh
+            args[0] = mesh.GetIndexCount(0);
+
+            mpb = new MaterialPropertyBlock();
+
+            SpawnExample();
         }
 
-        void Update()
+        private void LateUpdate()
         {
-            // Update starting position buffer
-            if (cachedInstanceCount != instanceCount || cachedSubMeshIndex != subMeshIndex)
-                UpdateBuffers();
+            // Only needs to be called if "instances" changed
+            PushDrawData();
+            mpb.SetBuffer("_DrawData", drawDataBuffer);
 
-            // Pad input
-            if (Input.GetAxisRaw("Horizontal") != 0.0f)
-                instanceCount = (int)Mathf.Clamp(instanceCount + Input.GetAxis("Horizontal") * 40000, 1.0f, 5000000.0f);
-
-            // Render
-            Graphics.DrawMeshInstancedIndirect(instanceMesh, subMeshIndex, instanceMaterial,
-                new Bounds(Vector3.zero, new Vector3(100.0f, 100.0f, 100.0f)), argsBuffer);
-        }
-
-        void OnGUI()
-        {
-            GUI.Label(new Rect(265, 25, 200, 30), "Instance Count: " + instanceCount);
-            instanceCount =
-                (int)GUI.HorizontalSlider(new Rect(25, 20, 200, 30), instanceCount, 1.0f, 5000000.0f);
-        }
-
-        void UpdateBuffers()
-        {
-            // Ensure submesh index is in range
-            if (instanceMesh != null)
-                subMeshIndex = Mathf.Clamp(subMeshIndex, 0, instanceMesh.subMeshCount - 1);
-
-            // Positions
-            if (positionBuffer != null)
-                positionBuffer.Release();
-            positionBuffer = new ComputeBuffer(instanceCount, 16);
-            Vector4[] positions = new Vector4[instanceCount];
-            for (int i = 0; i < instanceCount; i++)
-            {
-                float angle = Random.Range(0.0f, Mathf.PI * 2.0f);
-                float distance = Random.Range(20.0f, 100.0f);
-                float height = Random.Range(-2.0f, 2.0f);
-                float size = Random.Range(0.05f, 0.25f);
-                positions[i] = new Vector4(Mathf.Sin(angle) * distance, height, Mathf.Cos(angle) * distance, size);
-            }
-
-            positionBuffer.SetData(positions);
-            instanceMaterial.SetBuffer("positionBuffer", positionBuffer);
-
-            // Indirect args
-            if (instanceMesh != null)
-            {
-                args[0] = (uint)instanceMesh.GetIndexCount(subMeshIndex);
-                args[1] = (uint)instanceCount;
-                args[2] = (uint)instanceMesh.GetIndexStart(subMeshIndex);
-                args[3] = (uint)instanceMesh.GetBaseVertex(subMeshIndex);
-            }
-            else
-            {
-                args[0] = args[1] = args[2] = args[3] = 0;
-            }
-
+            args[1] = (uint)instances.Count;
             argsBuffer.SetData(args);
 
-            cachedInstanceCount = instanceCount;
-            cachedSubMeshIndex = subMeshIndex;
+            Graphics.DrawMeshInstancedIndirect(
+                mesh, 0, material,
+                new Bounds(Vector3.zero, Vector3.one * 1000f),
+                argsBuffer, 0,
+                mpb
+            );
         }
 
-        void OnDisable()
+        private void OnDestroy()
         {
-            if (positionBuffer != null)
-                positionBuffer.Release();
-            positionBuffer = null;
+            argsBuffer?.Release();
+            drawDataBuffer?.Release();
+        }
 
-            if (argsBuffer != null)
-                argsBuffer.Release();
-            argsBuffer = null;
+        private void PushDrawData()
+        {
+            if (drawDataBuffer == null || drawDataBuffer.count < instances.Count)
+            {
+                drawDataBuffer?.Release();
+                drawDataBuffer = new ComputeBuffer(instances.Count, Marshal.SizeOf<DrawData>());
+            }
+
+            drawDataBuffer.SetData(instances);
+        }
+
+        private void SpawnExample()
+        {
+            instances.Clear();
+            for (var x = 0; x < terrain.terrainData.size.x; x++)
+            {
+                for (var z = 0; z < terrain.terrainData.size.z; z++)
+                {
+                    var meshPos = new Vector3(x, 0, z) + transform.position;
+                    meshPos.y = terrain.SampleHeight(meshPos);
+                    Debug.Log(meshPos);
+                    instances.Add(new DrawData
+                    {
+                        // Pos = Random.insideUnitSphere * 100f,
+                        Pos = meshPos,
+                        Rot = Quaternion.identity,
+                        Scale = Vector3.one
+                    });
+                }
+            }
+        }
+
+        private struct DrawData
+        {
+            public Vector3 Pos;
+            public Quaternion Rot;
+            public Vector3 Scale;
         }
     }
 }

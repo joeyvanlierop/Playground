@@ -990,10 +990,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9e75a60220a789a4db17165c0da44909, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  instanceCount: 100
-  instanceMesh: {fileID: 10208, guid: 0000000000000000e000000000000000, type: 0}
-  instanceMaterial: {fileID: 2100000, guid: e8bb3fbfcc0ebbf488e4958b828ac2e3, type: 2}
-  subMeshIndex: 0
+  material: {fileID: 2100000, guid: e8bb3fbfcc0ebbf488e4958b828ac2e3, type: 2}
+  mesh: {fileID: 10208, guid: 0000000000000000e000000000000000, type: 0}
 --- !u!1 &1932721407
 GameObject:
   m_ObjectHideFlags: 0
